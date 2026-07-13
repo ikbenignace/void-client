@@ -1,0 +1,45 @@
+name: Build & release client
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build client jar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gradle 8.14 + shadow plugin run on 17; the JDK 8 compile toolchain is
+      # auto-provisioned by the foojay resolver declared in settings.gradle.kts.
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: Grant permissions to gradlew
+        run: chmod +x gradlew
+
+      - name: Build shadow jar
+        run: ./gradlew :client:shadowJar
+
+      - name: Locate jar
+        id: jar
+        run: echo "path=$(ls client/build/libs/void-client*.jar | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.jar.outputs.path }}#void-client.jar" \
+            --title "${{ github.ref_name }}" \
+            --notes "Void client for play.mella server (94.103.173.128). Download void-client.jar and run: java -jar void-client.jar  (override server with --address <ip>)." \
+          || gh release upload "${{ github.ref_name }}" "${{ steps.jar.outputs.path }}#void-client.jar" --clobber
